@@ -75,6 +75,8 @@ jobs:
           # Blacklist lmedm04 — conflicts with lme2510dtmb (same VID/PID)
           blacklist dvb_usb_lmedm04
           install dvb_usb_lmedm04 /bin/false
+          # lme2510dtmb module parameters (edit as needed, then replug/reload)
+          options lme2510dtmb ep8a_status=1 debug_lgs8gl5=0 debug_max2165=0
           EOF
 
           cat > pkg/DEBIAN/control <<EOF

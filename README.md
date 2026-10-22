@@ -6,9 +6,9 @@
 
 | 来源 | 取用的优点 |
 |---|---|
-| dybd_dtmb_driver（基线骨架） | dvb-usb-v2 模块化布局、streaming_ctrl 无自拆、**流期间禁 EP1 I2C** 纪律、固件单文件 + ACK 0x88/0x77 校验、MAX2165 ROM 校准 + 每次 tune reg04 `|0xF0` latch、LGS8GL5 反相每轮失败翻转锁定、set_frontend 后补发流重启 |
-| HiSilicon linux-6.12.y lme2510-dtmb.c | 冷态 PID 0x1111（完全冷插可绑定）、EP8A 8 字节帧解析与强度/质量换算公式、demod_read_hint（0x85 读命令第 5 字节回显末次写值）、OVERFLOW 容忍（记录后继续轮询，**不做** EP1 降级——遵守流期间禁 EP1） |
-| CH1_DTMB_RE_cpp（C++ 用户态） | 任意 1–16 PID 硬件过滤命令格式（CMD03×2 + CMD06 提交）、EP8A 默认启用决策（C++ 实测 EP8A 与 TS 流并存无冲突） |
+| [ahtsiu/dybd_dtmb_driver](https://github.com/ahtsiu/dybd_dtmb_driver)（基线骨架） | dvb-usb-v2 模块化布局、streaming_ctrl 无自拆、**流期间禁 EP1 I2C** 纪律、固件单文件 + ACK 0x88/0x77 校验、MAX2165 ROM 校准 + 每次 tune reg04 `\|0xF0` latch、LGS8GL5 反相每轮失败翻转锁定、set_frontend 后补发流重启 |
+| [HiSilicon-Development/linux-6.12.y](https://github.com/HiSilicon-Development/linux-6.12.y)（lme2510-dtmb.c） | 冷态 PID 0x1111（完全冷插可绑定）、EP8A 8 字节帧解析与强度/质量换算公式、demod_read_hint（0x85 读命令第 5 字节回显末次写值）、OVERFLOW 容忍（记录后继续轮询，**不做** EP1 降级——遵守流期间禁 EP1） |
+| [xeonliu/CH1_DTMB_RE_cpp](https://github.com/xeonliu/CH1_DTMB_RE_cpp)（C++ 用户态） | 任意 1–16 PID 硬件过滤命令格式（CMD03×2 + CMD06 提交）、EP8A 默认启用决策（C++ 实测 EP8A 与 TS 流并存无冲突） |
 
 相对 dybd 基线的差异：
 
@@ -37,7 +37,11 @@ sudo modprobe lme2510dtmb
 | 参数 | 默认 | 说明 |
 |---|---|---|
 | `ep8a_status` | 1 | EP8A 中断状态轮询；若实机出现 MCU 冲突（dybd 作者声称的现象）可 `ep8a_status=0` 回退 I2C 读取（流期间返回缓存值） |
+| `debug_lgs8gl5` | 0 | 解调前端调试日志 |
+| `debug_max2165` | 0 | 调谐器调试日志 |
 | `dvb_usb_force_pid_filter_usage` | 0 | dvb-usb-v2 框架自带参数；置 1 启用硬件 PID 过滤（见上方风险说明） |
+
+deb / `make install` 会把默认值写入 `/etc/modprobe.d/lme2510dtmb.conf`，按需直接编辑该文件（`options lme2510dtmb ep8a_status=1 debug_lgs8gl5=0 debug_max2165=0`），重新插拔或 reload 后生效。
 
 ## 与各来源的已知取舍
 
@@ -68,5 +72,3 @@ lme2510dtmb_status.c     EP8A URB 轮询 + 强度/质量公式
 dvb_usb.h                框架私有头（vendored，make fetch-headers 可更新）
 rom.dat / fw_new.bin     固件原料（与 C++ 版逐字节一致）
 ```
-
-GPL-2.0。基于 dybd_dtmb_driver（GPL）、HiSilicon lme2510-dtmb.c（GPL）、CH1_DTMB_RE_cpp 逆向结论重写/合并。

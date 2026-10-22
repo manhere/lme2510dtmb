@@ -59,6 +59,10 @@ install: modules $(FIRMWARE_DST)
 		> $(BLACKLIST_CONF)
 	@echo 'blacklist dvb_usb_lmedm04' >> $(BLACKLIST_CONF)
 	@echo 'install dvb_usb_lmedm04 /bin/false' >> $(BLACKLIST_CONF)
+	@echo '# lme2510dtmb module parameters (edit as needed, then replug/reload)' \
+		>> $(BLACKLIST_CONF)
+	@echo 'options lme2510dtmb ep8a_status=1 debug_lgs8gl5=0 debug_max2165=0' \
+		>> $(BLACKLIST_CONF)
 	depmod -a
 	@echo ""
 	@echo "================================"
