@@ -147,14 +147,20 @@ jobs:
 
       - name: Publish to GitHub Release
         run: |
+          set -x
+          shopt -s nullglob
           cd dist
-          ls -l *.deb
+          ls -la
+          debs=( *.deb )
+          [ ${#debs[@]} -gt 0 ] || { echo "ERROR: no debs collected"; exit 1; }
+
           if [ "${{ github.ref_type }}" = "tag" ]; then
             TAG="${{ github.ref_name }}"
-            gh release create "$TAG" *.deb \
-              --title "lme2510dtmb $TAG" \
-              --generate-notes \
-            || gh release upload "$TAG" *.deb --clobber
+            gh release view "$TAG" >/dev/null 2>&1 || \
+              gh release create "$TAG" "${debs[@]}" \
+                --title "lme2510dtmb $TAG" \
+                --generate-notes
+            gh release upload "$TAG" "${debs[@]}" --clobber
           else
             TAG="latest"
             if ! gh release view "$TAG" >/dev/null 2>&1; then
@@ -163,12 +169,18 @@ jobs:
                 --notes "Rolling builds of \`main\` (arm64), one deb per supported kernel variant.
 
           Install the one matching your kernel (uname -r):
-              sudo dpkg -i lme2510dtmb_*_6.12.112-dvbip-<variant>_arm64.deb
+              sudo dpkg -i lme2510dtmb_*_6.12.112-dvbip-1002_arm64.deb
               sudo modprobe lme2510dtmb
 
           Variants: dvbip-1001 / 1002 / 1004 / 1006.
           Commit: ${{ github.sha }}" \
                 --prerelease
             fi
-            gh release upload "$TAG" *.deb --clobber
+            # Upload one by one so a single asset failure does not
+            # abort the remaining uploads.
+            for f in "${debs[@]}"; do
+              gh release upload "$TAG" "$f" --clobber \
+                || echo "::warning::upload failed for $f"
+            done
+            gh release view "$TAG" --json assets --jq '.assets[].name'
           fi
