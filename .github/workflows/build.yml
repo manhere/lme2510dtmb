@@ -6,33 +6,28 @@ on:
     tags: [ 'v*' ]
   pull_request:
   workflow_dispatch:
-    inputs:
-      headers_variant:
-        description: 'HiSilicon headers variant (6.12.112-dvbip-XXXX)'
-        type: choice
-        required: false
-        default: '1002'
-        options:
-          - '1001'
-          - '1002'
-          - '1004'
-          - '1006'
 
 permissions:
   contents: write
 
+env:
+  PKG_VER: 0.2.0-1
+  # Prebuilt arm64 kernel headers matching the target platform
+  # (HiSilicon-Development firmware release "kernel").
+  HEADERS_BASE_URL: https://github.com/HiSilicon-Development/firmware/releases/download/kernel
+
 jobs:
   aarch64:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # Build all four header variants on every run; the deb filename
+        # carries the kernel release (dvbip-XXXX) so assets coexist.
+        variant: [ '1001', '1002', '1004', '1006' ]
     env:
-      PKG_VER: 0.2.0-1
-      # Prebuilt arm64 kernel headers matching the target platform
-      # (HiSilicon-Development firmware release "kernel").
-      # workflow_dispatch -> selectable variant (default 1002);
-      # push / PR builds always use 1002.
-      HEADERS_VARIANT: ${{ inputs.headers_variant || '1002' }}
       HEADERS_DEB_URL: >-
-        https://github.com/HiSilicon-Development/firmware/releases/download/kernel/linux-headers-6.12.112-dvbip-${{ inputs.headers_variant || '1002' }}_6.12.112-1_arm64.deb
+        ${{ env.HEADERS_BASE_URL }}/linux-headers-6.12.112-dvbip-${{ matrix.variant }}_6.12.112-1_arm64.deb
 
     steps:
       - uses: actions/checkout@v4
@@ -51,9 +46,8 @@ jobs:
         with:
           platforms: arm64
 
-      - name: Extract target kernel headers
+      - name: Extract target kernel headers (dvbip-${{ matrix.variant }})
         run: |
-          echo "headers variant: dvbip-$HEADERS_VARIANT"
           mkdir -p /tmp/hdr
           curl -fSL --retry 3 -o /tmp/hdr/headers.deb "$HEADERS_DEB_URL"
           dpkg-deb -x /tmp/hdr/headers.deb /tmp/hdr/rootfs
@@ -127,49 +121,54 @@ jobs:
           DEB="lme2510dtmb_${PKG_VER}_${KREL}_arm64.deb"
           dpkg-deb --build --root-owner-group pkg "$DEB"
           dpkg-deb --info "$DEB"
-          echo "DEB=$DEB" >> "$GITHUB_ENV"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: lme2510dtmb-${{ env.KREL }}-aarch64-deb
-          path: |
-            ${{ env.DEB }}
-            lme2510dtmb.ko
-            dvb-usb-lme2510dtmb.fw
+          path: lme2510dtmb_*.deb
           if-no-files-found: error
 
-      # Versioned tag push (v*) -> release for that tag.
-      # Plain push to main  -> upsert the rolling "latest" pre-release.
-      # The deb filename carries the kernel release (dvbip-XXXX), so
-      # builds of different header variants coexist as separate assets
-      # — upload with --clobber instead of delete+recreate.
+  # Publish only after ALL variants built successfully; one job uploads
+  # every deb so matrix jobs never race on the same release.
+  release:
+    if: github.event_name != 'pull_request'
+    needs: aarch64
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Collect all variant debs
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: lme2510dtmb-*-aarch64-deb
+          merge-multiple: true
+
       - name: Publish to GitHub Release
-        if: github.event_name != 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
+          cd dist
+          ls -l *.deb
           if [ "${{ github.ref_type }}" = "tag" ]; then
             TAG="${{ github.ref_name }}"
-            gh release create "$TAG" "$DEB" \
+            gh release create "$TAG" *.deb \
               --title "lme2510dtmb $TAG" \
-              --generate-notes
+              --generate-notes \
+            || gh release upload "$TAG" *.deb --clobber
           else
             TAG="latest"
             if ! gh release view "$TAG" >/dev/null 2>&1; then
               gh release create "$TAG" \
                 --title "lme2510dtmb latest" \
-                --notes "Rolling builds of \`main\` (arm64).
+                --notes "Rolling builds of \`main\` (arm64), one deb per supported kernel variant.
 
-          Install:
-              sudo dpkg -i lme2510dtmb_*.deb
+          Install the one matching your kernel (uname -r):
+              sudo dpkg -i lme2510dtmb_*_6.12.112-dvbip-<variant>_arm64.deb
               sudo modprobe lme2510dtmb
 
-          Assets are named per kernel release (6.12.112-dvbip-1001/1002/1004/1006);
-          dispatch a build with the matching variant to refresh an asset.
-
+          Variants: dvbip-1001 / 1002 / 1004 / 1006.
           Commit: ${{ github.sha }}" \
                 --prerelease
             fi
-            gh release upload "$TAG" "$DEB" --clobber
+            gh release upload "$TAG" *.deb --clobber
           fi
