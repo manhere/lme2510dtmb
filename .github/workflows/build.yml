@@ -137,6 +137,9 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ github.token }}
+      # No checkout in this job — gh resolves the repo from GH_REPO
+      # (it does not read GITHUB_REPOSITORY on its own).
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Collect all variant debs
         uses: actions/download-artifact@v4
