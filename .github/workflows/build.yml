@@ -12,9 +12,6 @@ permissions:
 
 env:
   PKG_VER: 0.2.0-1
-  # Prebuilt arm64 kernel headers matching the target platform
-  # (HiSilicon-Development firmware release "kernel").
-  HEADERS_BASE_URL: https://github.com/HiSilicon-Development/firmware/releases/download/kernel
 
 jobs:
   aarch64:
@@ -26,8 +23,11 @@ jobs:
         # carries the kernel release (dvbip-XXXX) so assets coexist.
         variant: [ '1001', '1002', '1004', '1006' ]
     env:
-      HEADERS_DEB_URL: >-
-        ${{ env.HEADERS_BASE_URL }}/linux-headers-6.12.112-dvbip-${{ matrix.variant }}_6.12.112-1_arm64.deb
+      # Prebuilt arm64 kernel headers matching the target platform
+      # (HiSilicon-Development firmware release "kernel").
+      # NOTE: jobs.<id>.env supports the matrix context but NOT the env
+      # context, so the URL is spelled out here in full.
+      HEADERS_DEB_URL: https://github.com/HiSilicon-Development/firmware/releases/download/kernel/linux-headers-6.12.112-dvbip-${{ matrix.variant }}_6.12.112-1_arm64.deb
 
     steps:
       - uses: actions/checkout@v4
