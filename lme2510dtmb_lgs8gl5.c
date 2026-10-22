@@ -2,7 +2,7 @@
 /*
  * lme2510dtmb_lgs8gl5.c — Fork of kernel lgs8gl5.c for LME2510 DTMB driver
  *
- * Based on Legend Silicon LGS-8GL5 DMB-TH demodulator driver
+ * Based on Legend Silicon LGS-8GL5 DTMB demodulator driver
  * (Copyright (C) 2008 Sirius International).
  *
  * Key differences from kernel lgs8gl5.c:
@@ -664,7 +664,7 @@ struct dvb_frontend *lme2510dtmb_lgs8gl5_attach(
 	       sizeof(struct dvb_frontend_ops));
 	state->frontend.demodulator_priv = state;
 
-	printk(KERN_INFO "lme2510dtmb_lgs8gl5: LGS-8GL5 DMB-TH demod attached\n");
+	printk(KERN_INFO "lme2510dtmb_lgs8gl5: LGS-8GL5 DTMB demod attached\n");
 	return &state->frontend;
 
 error:
@@ -678,7 +678,7 @@ EXPORT_SYMBOL(lme2510dtmb_lgs8gl5_attach);
 static const struct dvb_frontend_ops lme2510dtmb_lgs8gl5_ops = {
 	.delsys = { SYS_DVBT },
 	.info = {
-		.name            = "LME2510DTMB LGS-8GL5 DMB-TH",
+		.name            = "LME2510DTMB LGS-8GL5 DTMB",
 		.frequency_min_hz  = 474 * MHz,
 		.frequency_max_hz  = 858 * MHz,
 		.frequency_stepsize_hz = 10 * kHz,
@@ -710,6 +710,6 @@ static const struct dvb_frontend_ops lme2510dtmb_lgs8gl5_ops = {
 module_param(debug_lgs8gl5, int, 0644);
 MODULE_PARM_DESC(debug_lgs8gl5, "Turn on/off frontend debugging (default:off).");
 
-MODULE_DESCRIPTION("LME2510DTMB LGS-8GL5 DMB-TH Demodulator driver");
+MODULE_DESCRIPTION("LME2510DTMB LGS-8GL5 DTMB Demodulator driver");
 MODULE_AUTHOR("LME2510DTMB project");
 MODULE_LICENSE("GPL");

@@ -50,7 +50,7 @@ sudo modprobe lme2510dtmb
 ## 验证清单
 
 1. 冷插（未上电/换 USB 口）：`lsusb` 应先见 0x3344:0x1111 → 灌固件后重枚举为 0x3344:0x1120，`dmesg | grep lme2510dtmb` 无 error；
-2. `dmesg` 确认 `EP8A status polling started` 与 `LGS-8GL5 DMB-TH demod attached`、chip_id=0x0E；
+2. `dmesg` 确认 `EP8A status polling started` 与 `LGS-8GL5 DTMB demod attached`、chip_id=0x0E；
 3. `tzap`/`dvbv5-zap` 或 tvheadend 锁频，观察锁定位与信号质量（EP8A 公式值，锁定后典型 50–80%）；
 4. 收看 10 分钟确认无 TS 卡顿（EP8A 与流并存的最终实测）；
 5. 若有卡顿：`rmmod lme2510dtmb && modprobe lme2510dtmb ep8a_status=0` 对比。
