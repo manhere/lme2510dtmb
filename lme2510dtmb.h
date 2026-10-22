@@ -176,7 +176,7 @@ int lme2510dtmb_i2c_gate_ctrl(struct dvb_frontend *fe, int enable);
 
 struct dvb_frontend *lme2510dtmb_lgs8gl5_attach(
 	const struct lme2510dtmb_lgs8gl5_config *config,
-	struct i2c_adapter *i2c);
+	struct i2c_adapter *i2c, u8 *chip_type);
 
 /* ── Tuner ────────────────────────────────────────────────────── */
 

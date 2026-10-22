@@ -97,6 +97,7 @@ int lme2510dtmb_frontend_attach(struct dvb_usb_adapter *adap)
 		.osc_clk_khz      = 12000,
 		.default_freq_khz = 474000,
 	};
+	u8 chip_type = 0x00;  /* MCU CMD 0x16 variant: 0 = LGS8GL5, 1 = LGS8G75 */
 	int ret;
 
 	dev_dbg(&d->udev->dev, "%s\n", __func__);
@@ -104,17 +105,17 @@ int lme2510dtmb_frontend_attach(struct dvb_usb_adapter *adap)
 
 	/* ── Chip detect sequence (matching FUN_00015650 LGS8GL5 branch) ── */
 
-	/* 1. Read chip ID from demod[0x00] (expect 0x0E = LGS8GL5) */
+	/* 1. Read chip ID from demod[0x00]: 0x0E = LGS8GL5, else LGS8G75 */
 
 	adap->fe[0] = lme2510dtmb_lgs8gl5_attach(&demod_cfg,
-				 &d->i2c_adap);
+				 &d->i2c_adap, &chip_type);
 	if (!adap->fe[0]) {
-		dev_err(&d->udev->dev, "LGS8GL5 demod not found\n");
+		dev_err(&d->udev->dev, "DTMB demod not found\n");
 		return -ENODEV;
 	}
 
-	/* 2. MCU demod variant select {16 01 00} */
-	ret = lme2510dtmb_mcu_demod_variant(d, 0x00);
+	/* 2. MCU demod variant select {16 01 <type>} */
+	ret = lme2510dtmb_mcu_demod_variant(d, chip_type);
 	if (ret < 0) {
 		dev_err(&d->udev->dev, "MCU demod variant select failed\n");
 		dvb_frontend_detach(adap->fe[0]);

@@ -1,6 +1,6 @@
 # lme2510dtmb — LME2510/LME2511 DTMB USB 棒合并版 out-of-tree 内核驱动
 
-三项目优点合并版（out-of-tree，dvb-usb-v2 框架）。目标硬件：**LME2511 + LGS8GL5 + MAX2165**。
+三项目优点合并版（out-of-tree，dvb-usb-v2 框架）。目标硬件：**LME2511 + LGS8GL5 + MAX2165**（另含 LGS8G75 薄壳支持，见下）。
 
 支持的 USB ID（冷态 0x3344:0x1111，灌固件后按热态 PID 重枚举）：
 
@@ -59,7 +59,7 @@ deb / `make install` 会把默认值写入 `/etc/modprobe.d/lme2510dtmb.conf`，
 ## 与各来源的已知取舍
 
 - **TS 重同步未移植**：内核 `dvb_dmx_swfilter` 自带 0x47 同步容错，收益低；
-- **G75 路径未实现**：实机确认为 LGS8GL5（chip_id==0x0E），demod attach 会校验并在非 GL5 时拒绝；
+- **G75 薄壳支持**：attach 识别 demod[0x00]——0x0E 走 LGS8GL5 完整状态机，其余可读值按 C++ 兜底规则走 LGS8G75 薄壳路径（CMD 0x16 chipType=1 上报 + `init_after_tune` 寄存器序列 + 0x4B bit0 简单锁存轮询 5s@100ms，无 post-lock resync）；G75 路径移植自 C++ `Lgs8G75::lockAfterTune()`，无实机验证；
 - **pid0xd0 固件变体已落地**（见上方固件说明）：冷态 PID 恒为 0x1111 无 SKU 信息，故冷插 0x22d0 家族的棒会先被灌主固件并重枚举为 0x1120（与 C++ 版行为一致）；仅当棒以 0x22d0 枚举但 MCU 未就绪时才灌 pid0xd0 变体；
 - **get_frontend DTMB 模式号上报**：锁定后读 reg0xA2 高 4 位（GB20600 模式 1–7），按标准工作模式表映射为 modulation / C1·C3780 / PN420·595·945 / 码率，替代原静态假值；
 - **流中加 PID（hw filter 开启时）会即时经 EP1 提交**：lmedm04 主线驱动同硬件家族如此工作，但本固件未验证——默认全通路径完全无此风险；

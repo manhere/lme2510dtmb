@@ -10,7 +10,9 @@
  *   - set_frontend: unlock→tune→re-lock→resync→soft_reset→wait_lock
  *   - wait_lock: 3-mode retry (modes 0/2/4, carrier 20×30ms + lock 10×20ms)
  *   - post_lock_resync: demod[7E]&=0xFE, alt[C5]=(val&0xE6)|0x06, soft_reset
- *   - chip ID check (0x0E) in attach
+ *   - attach: chip_id 0x0E = LGS8GL5 (full state machine); any other
+ *     readable value = LGS8G75 thin-shell (init_after_tune + 0x4B poll,
+ *     ported from C++ user-space driver)
  *   - start_demod replaced by set_frontend inline flow
  */
 
@@ -26,6 +28,7 @@
 
 /* ── Register map ─────────────────────────────────────────────── */
 #define REG_CHIP_ID     0x00
+#define LGS8GL5_CHIP_ID 0x0E
 #define REG_UNLOCK      0x01
 #define REG_RESET       0x02
 #define REG_03          0x03
@@ -53,6 +56,7 @@ struct lme2510dtmb_lgs8gl5_state {
 	struct i2c_adapter *i2c;
 	struct lme2510dtmb_lgs8gl5_config config;  /* copy, not pointer */
 	struct dvb_frontend frontend;
+	u8 chip_id;  /* demod[0x00]; 0x0E = LGS8GL5, anything else = LGS8G75 */
 };
 
 static int debug_lgs8gl5;
@@ -385,6 +389,67 @@ static int lme2510dtmb_lgs8gl5_wait_lock(struct lme2510dtmb_lgs8gl5_state *state
 	return -ETIMEDOUT;
 }
 
+/* ── LGS8G75 thin-shell support ────────────────────────────────── */
+
+/*
+ * lme2510dtmb_g75_init_after_tune — C++ Demodulator::initAfterTune().
+ *
+ * Generic post-tune register sequence, different from the GL5 resync:
+ *   demod[07] |= 0x0C; demod[08..0B] = 0; demod[07] &= 0x7F;
+ *   demod[0C] = (val & 0x7B) | 0x80; demod[39] = 0; demod[3D] = 0x04.
+ */
+static int lme2510dtmb_g75_init_after_tune(struct lme2510dtmb_lgs8gl5_state *state)
+{
+	int v;
+
+	v = lme2510dtmb_lgs8gl5_read_reg(state, REG_07);
+	if (v >= 0)
+		lme2510dtmb_lgs8gl5_write_reg(state, REG_07, (u8)v | 0x0C);
+
+	lme2510dtmb_lgs8gl5_write_reg(state, 0x08, 0x00);
+	lme2510dtmb_lgs8gl5_write_reg(state, REG_09, 0x00);
+	lme2510dtmb_lgs8gl5_write_reg(state, REG_0A, 0x00);
+	lme2510dtmb_lgs8gl5_write_reg(state, REG_0B, 0x00);
+
+	v = lme2510dtmb_lgs8gl5_read_reg(state, REG_07);
+	if (v >= 0)
+		lme2510dtmb_lgs8gl5_write_reg(state, REG_07, (u8)v & 0x7F);
+
+	v = lme2510dtmb_lgs8gl5_read_reg(state, REG_0C);
+	if (v >= 0)
+		lme2510dtmb_lgs8gl5_write_reg(state, REG_0C, ((u8)v & 0x7B) | 0x80);
+
+	lme2510dtmb_lgs8gl5_write_reg(state, 0x39, 0x00);
+	lme2510dtmb_lgs8gl5_write_reg(state, 0x3D, 0x04);
+
+	return 0;
+}
+
+/*
+ * lme2510dtmb_g75_wait_lock — C++ Demodulator::pollLockRegister():
+ * simple poll of demod[0x4B] bit0, 5 s @ 100 ms.
+ */
+static int lme2510dtmb_g75_wait_lock(struct lme2510dtmb_lgs8gl5_state *state)
+{
+	int i, v;
+
+	dprintk("%s\n", __func__);
+
+	for (i = 0; i < 50; i++) {
+		v = lme2510dtmb_lgs8gl5_read_reg(state, REG_STRENGTH);
+		if (v < 0)
+			return v;
+		if (v & 0x01) {
+			dprintk("%s: LOCKED after %d ms\n", __func__, i * 100);
+			return 0;
+		}
+		msleep(100);
+	}
+
+	dprintk("%s: LOCK failed\n", __func__);
+	return -ETIMEDOUT;
+}
+
 /* ── set_frontend ─────────────────────────────────────────────── */
 
 /*
@@ -393,7 +458,7 @@ static int lme2510dtmb_lgs8gl5_wait_lock(struct lme2510dtmb_lgs8gl5_state *state
  * Diff from kernel:
  *   - Unlock demod[1]=0xE0 before tuner set_params
  *   - Re-lock demod[1]=0x60 after
- *   - Demod resync + soft_reset + wait_lock (3-mode retry)
+ *   - Lock sequence per demod variant (GL5 resync+wait_lock / G75 poll)
  */
 static int lme2510dtmb_lgs8gl5_set_frontend(struct dvb_frontend *fe)
 {
@@ -427,14 +492,19 @@ static int lme2510dtmb_lgs8gl5_set_frontend(struct dvb_frontend *fe)
 	/* 4. Re-lock demod[1] = 0x60 */
 	lme2510dtmb_lgs8gl5_write_reg(state, REG_UNLOCK, 0x60);
 
-	/* 5. Demod resync */
-	lme2510dtmb_lgs8gl5_demod_resync(state);
-
-	/* 6. Soft reset again */
-	lme2510dtmb_lgs8gl5_soft_reset(state);
-
-	/* 7. Wait for lock */
-	ret = lme2510dtmb_lgs8gl5_wait_lock(state);
+	/* 5-7. Lock sequence, per demod variant:
+	 *  - LGS8GL5: demod_resync → soft_reset → 3-mode wait_lock
+	 *  - LGS8G75: init_after_tune → simple 0x4B bit0 poll (C++
+	 *    Lgs8G75::lockAfterTune(); no post-lock resync on G75)
+	 */
+	if (state->chip_id == LGS8GL5_CHIP_ID) {
+		lme2510dtmb_lgs8gl5_demod_resync(state);
+		lme2510dtmb_lgs8gl5_soft_reset(state);
+		ret = lme2510dtmb_lgs8gl5_wait_lock(state);
+	} else {
+		lme2510dtmb_g75_init_after_tune(state);
+		ret = lme2510dtmb_g75_wait_lock(state);
+	}
 
 	if (ret == 0) {
 		struct dvb_usb_adapter *adap = fe_to_adap(fe);
@@ -698,20 +768,26 @@ static const struct dvb_frontend_ops lme2510dtmb_lgs8gl5_ops;
 /* ── attach ────────────────────────────────────────────────────── */
 
 /*
- * lme2510dtmb_lgs8gl5_attach — probe and create LGS8GL5 frontend.
+ * lme2510dtmb_lgs8gl5_attach — probe and create LGS8GL5/LGS8G75 frontend.
  *
  * Diff from kernel lgs8gl5_attach:
- *   - Reads chip ID from demod[0x00], expects 0x0E (LGS8GL5).
- *   - Returns NULL if chip ID doesn't match.
+ *   - Reads chip ID from demod[0x00].
+ *   - 0x0E = LGS8GL5 (full state machine); any other readable value =
+ *     LGS8G75 thin-shell path (C++ Demodulator::identify() fallback rule).
+ *   - On success *chip_type is set to the MCU CMD 0x16 variant value
+ *     (0 = LGS8GL5, 1 = LGS8G75).
  */
 struct dvb_frontend *lme2510dtmb_lgs8gl5_attach(
 	const struct lme2510dtmb_lgs8gl5_config *config,
-	struct i2c_adapter *i2c)
+	struct i2c_adapter *i2c, u8 *chip_type)
 {
 	struct lme2510dtmb_lgs8gl5_state *state = NULL;
 	int chip_id;
 
 	dprintk("%s\n", __func__);
+
+	if (chip_type)
+		*chip_type = 0x00;
 
 	state = kzalloc(sizeof(*state), GFP_KERNEL);
 	if (state == NULL)
@@ -720,25 +796,35 @@ struct dvb_frontend *lme2510dtmb_lgs8gl5_attach(
 	state->config = *config;
 	state->i2c    = i2c;
 
-	/* Check if demod is there and chip ID = 0x0E */
+	/* Check if demod is there and identify the variant */
 	chip_id = lme2510dtmb_lgs8gl5_read_reg(state, REG_CHIP_ID);
 	if (chip_id < 0)
 		goto error;
 
 	dprintk("%s: chip_id = 0x%02X\n", __func__, chip_id);
 
-	if (chip_id != 0x0E) {
-		printk(KERN_ERR "lme2510dtmb_lgs8gl5: unexpected chip ID 0x%02X "
-		       "(expected 0x0E)\n", chip_id);
-		goto error;
-	}
+	state->chip_id = (u8)chip_id;
+
+	if (chip_type)
+		*chip_type = (chip_id == LGS8GL5_CHIP_ID) ? 0x00 : 0x01;
 
 	/* Create dvb_frontend */
 	memcpy(&state->frontend.ops, &lme2510dtmb_lgs8gl5_ops,
 	       sizeof(struct dvb_frontend_ops));
 	state->frontend.demodulator_priv = state;
 
-	printk(KERN_INFO "lme2510dtmb_lgs8gl5: LGS-8GL5 DTMB demod attached\n");
+	if (chip_id == LGS8GL5_CHIP_ID) {
+		printk(KERN_INFO "lme2510dtmb_lgs8gl5: LGS-8GL5 DTMB demod "
+		       "attached (chip_id 0x0E)\n");
+	} else {
+		strscpy(state->frontend.ops.info.name,
+			"LME2510DTMB LGS-8G75 DTMB",
+			sizeof(state->frontend.ops.info.name));
+		printk(KERN_INFO "lme2510dtmb_lgs8gl5: LGS-8G75 DTMB demod "
+		       "attached (chip_id 0x%02X, thin-shell path)\n",
+		       chip_id);
+	}
+
 	return &state->frontend;
 
 error:
