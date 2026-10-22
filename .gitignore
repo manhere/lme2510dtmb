@@ -14,5 +14,6 @@ Module.markers
 Module.symvers
 modules.order
 dvb-usb-lme2510dtmb.fw
+dvb-usb-lme2510dtmb-pid0xd0.fw
 *.deb
 pkg/

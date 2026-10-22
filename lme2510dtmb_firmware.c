@@ -87,6 +87,24 @@ static int upload_section(struct dvb_usb_device *d,
 	return 0;
 }
 
+/*
+ * Firmware variant selection (mirrors the C++ user-space driver):
+ * a stick enumerated at a PID whose low byte is 0xd0 (0x22d0 family)
+ * runs the "pid0xd0" firmware build.  If such a stick shows up without
+ * a ready MCU (no EP88 bulk endpoint), it needs a re-upload and must
+ * get the same variant it was running — otherwise it would re-enumerate
+ * as the main firmware's PID.  All other cold devices (incl. 0x1111
+ * bootloader) use the main firmware, matching the C++ cold-boot path.
+ */
+static const char *lme2510dtmb_select_fw_file(struct dvb_usb_device *d)
+{
+	__le16 pid = d->udev->descriptor.idProduct;
+
+	if ((le16_to_cpu(pid) & 0x00ff) == 0xd0)
+		return LME2510DTMB_FW_PID0XD0_FILE;
+	return LME2510DTMB_FW_FILE;
+}
+
 int lme2510dtmb_identify_state(struct dvb_usb_device *d, const char **name)
 {
 	struct usb_host_interface *alt;
@@ -97,7 +115,7 @@ int lme2510dtmb_identify_state(struct dvb_usb_device *d, const char **name)
 	if (!d->udev->actconfig || !d->udev->actconfig->interface) {
 		dev_dbg(&d->udev->dev, "%s: no actconfig — assume COLD\n",
 			__func__);
-		*name = LME2510DTMB_FW_FILE;
+		*name = lme2510dtmb_select_fw_file(d);
 		return COLD;
 	}
 
@@ -125,7 +143,7 @@ int lme2510dtmb_identify_state(struct dvb_usb_device *d, const char **name)
 		return WARM;
 	}
 cold:
-	*name = LME2510DTMB_FW_FILE;
+	*name = lme2510dtmb_select_fw_file(d);
 	return COLD;
 }
 
@@ -137,8 +155,18 @@ int lme2510dtmb_download_firmware(struct dvb_usb_device *d,
 			   const struct firmware *fw)
 {
 	int ret;
+	int app_size;
 
-	if (fw->size != FW_TOTAL_SIZE)
+	/* Two variant blobs, both = ROM(512B) + APP:
+	 *   main    5348B (APP 4836B)   — dvb-usb-lme2510dtmb.fw
+	 *   pid0xd0 3655B (APP 3143B)   — dvb-usb-lme2510dtmb-pid0xd0.fw
+	 * APP size is derived from the blob size (ROM is fixed 512B).
+	 */
+	if (fw->size == FW_TOTAL_SIZE)
+		app_size = FW_APP_SIZE;
+	else if (fw->size == FW_TOTAL_SIZE_PID0XD0)
+		app_size = FW_APP_SIZE_PID0XD0;
+	else
 		return -EINVAL;
 
 	if (last_fw_upload &&
@@ -149,7 +177,9 @@ int lme2510dtmb_download_firmware(struct dvb_usb_device *d,
 		return RECONNECTS_USB;
 	}
 
-	dev_info(&d->udev->dev, "Uploading firmware...\n");
+	dev_info(&d->udev->dev, "Uploading firmware (%s, %d bytes)...\n",
+		 fw->size == FW_TOTAL_SIZE ? "main" : "pid0xd0",
+		 (int)fw->size);
 
 	dev_info(&d->udev->dev,
 		 "switching to alt-setting 1 (ifnum=%d)...\n",
@@ -168,7 +198,7 @@ int lme2510dtmb_download_firmware(struct dvb_usb_device *d,
 		return ret;
 
 	ret = upload_section(d, 0x02, 0x82,
-			     fw->data + FW_ROM_SIZE, FW_APP_SIZE, "APP");
+			     fw->data + FW_ROM_SIZE, app_size, "APP");
 	if (ret < 0)
 		return ret;
 

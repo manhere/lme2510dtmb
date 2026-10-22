@@ -41,6 +41,8 @@ sudo modprobe lme2510dtmb
 
 固件 `dvb-usb-lme2510dtmb.fw`（5348B）由 `rom.dat`(512B) + `fw_new.bin`(4836B) cat 生成，md5 与实测可用的 C++ 版内嵌 blob 一致（9d0c405f… / 1f38019e…）。
 
+**pid0xd0 固件变体**：`dvb-usb-lme2510dtmb-pid0xd0.fw`（3655B）由 `rom.dat` + `fw_pid0xd0.bin`(3143B) 生成（md5 f7b2dde6…，与 C++ 版内嵌 blob 一致）。选择规则与 C++ 版对齐：当前枚举 PID 低字节为 0xd0（0x22d0 家族）且 MCU 未就绪（无 EP88 端点，即冷态/固件丢失）时上传该变体，重枚举后仍是 0x22d0；其余冷态（含 0x1111 bootloader）一律上传主固件——C++ 版冷启动也是恒用主固件（冷态 PID 恒 0x1111，无从得知 SKU 变体）。
+
 **必须 blacklist `dvb_usb_lmedm04`**（同 VID/PID 冲突，make install 已自动写入 /etc/modprobe.d）。
 
 ## 模块参数
@@ -58,7 +60,7 @@ deb / `make install` 会把默认值写入 `/etc/modprobe.d/lme2510dtmb.conf`，
 
 - **TS 重同步未移植**：内核 `dvb_dmx_swfilter` 自带 0x47 同步容错，收益低；
 - **G75 路径未实现**：实机确认为 LGS8GL5（chip_id==0x0E），demod attach 会校验并在非 GL5 时拒绝；
-- **22D0 (pid0xd0) 固件变体未内置**：冷启动固定上传主固件（与 C++ 版默认行为一致——冷态 PID 恒为 0x1111，主固件即其选择）；若 0x22d0 变体实机无法锁定，需引入 `pid0xd0.bin`（3143B）按 PID 选择；
+- **pid0xd0 固件变体已落地**（见上方固件说明）：冷态 PID 恒为 0x1111 无 SKU 信息，故冷插 0x22d0 家族的棒会先被灌主固件并重枚举为 0x1120（与 C++ 版行为一致）；仅当棒以 0x22d0 枚举但 MCU 未就绪时才灌 pid0xd0 变体；
 - **get_frontend DTMB 模式号上报**：锁定后读 reg0xA2 高 4 位（GB20600 模式 1–7），按标准工作模式表映射为 modulation / C1·C3780 / PN420·595·945 / 码率，替代原静态假值；
 - **流中加 PID（hw filter 开启时）会即时经 EP1 提交**：lmedm04 主线驱动同硬件家族如此工作，但本固件未验证——默认全通路径完全无此风险；
 - **流停止不发 {0x0a}**：沿用 dybd 行为（URB 停止后 MCU 输出被丢弃）。
@@ -82,5 +84,6 @@ lme2510dtmb_lgs8gl5.c    LGS8GL5 解调（识别、训练、反相翻转锁定�
 lme2510dtmb_max2165.c    MAX2165 调谐器（ROM 校准 + 0xF0 latch）
 lme2510dtmb_status.c     EP8A URB 轮询 + 强度/质量公式
 dvb_usb.h                框架私有头（vendored，make fetch-headers 可更新）
-rom.dat / fw_new.bin     固件原料（与 C++ 版逐字节一致）
+rom.dat / fw_new.bin     主固件原料（与 C++ 版逐字节一致）
+fw_pid0xd0.bin           pid0xd0 变体固件原料（3143B，与 C++ 版逐字节一致）
 ```

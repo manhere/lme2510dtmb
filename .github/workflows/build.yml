@@ -65,8 +65,10 @@ jobs:
           file lme2510dtmb.ko
           aarch64-linux-gnu-readelf -h lme2510dtmb.ko | grep -E 'Class|Machine'
 
-      - name: Build firmware blob
-        run: make dvb-usb-lme2510dtmb.fw
+      - name: Build firmware blobs
+        run: |
+          make dvb-usb-lme2510dtmb.fw
+          make dvb-usb-lme2510dtmb-pid0xd0.fw
 
       - name: Package .deb
         run: |
@@ -79,6 +81,7 @@ jobs:
           install -m 0644 lme2510dtmb.ko \
             "pkg/lib/modules/$KREL/kernel/drivers/media/usb/lme2510dtmb.ko"
           install -m 0644 dvb-usb-lme2510dtmb.fw pkg/lib/firmware/
+          install -m 0644 dvb-usb-lme2510dtmb-pid0xd0.fw pkg/lib/firmware/
 
           cat > pkg/etc/modprobe.d/lme2510dtmb.conf <<'EOF'
           # Blacklist lmedm04 — conflicts with lme2510dtmb (same VID/PID)
@@ -98,8 +101,9 @@ jobs:
           Description: LME2510 DTMB USB dongle DVB driver (kernel ${KREL})
            Out-of-tree dvb-usb-v2 driver for the LME2510C/LME2511 DTMB stick
            (LGS8GL5 demodulator + MAX2165 tuner). Installs the prebuilt
-           kernel module for kernel ${KREL}, the firmware blob and a
-           modprobe blacklist for the conflicting in-tree lmedm04 driver.
+           kernel module for kernel ${KREL}, the firmware blobs (main +
+           pid0xd0 variant) and a modprobe blacklist for the conflicting
+           in-tree lmedm04 driver.
           EOF
 
           cat > pkg/DEBIAN/postinst <<'EOF'

@@ -27,6 +27,8 @@ ccflags-y := -Wno-declaration-after-statement -fno-ipa-sra \
 
 FIRMWARE_SRC := rom.dat fw_new.bin
 FIRMWARE_DST := dvb-usb-lme2510dtmb.fw
+FW_PID0XD0_SRC := rom.dat fw_pid0xd0.bin
+FW_PID0XD0_DST := dvb-usb-lme2510dtmb-pid0xd0.fw
 FIRMWARE_DIR  := /lib/firmware
 MODPROBE_DIR  := /etc/modprobe.d
 BLACKLIST_CONF := $(MODPROBE_DIR)/lme2510dtmb-dtmb.conf
@@ -40,19 +42,24 @@ modules:
 
 clean:
 	$(MAKE) -C $(KERNEL_SRC) M=$(CURDIR) clean
-	rm -f $(FIRMWARE_DST)
+	rm -f $(FIRMWARE_DST) $(FW_PID0XD0_DST)
 
-# ── Build firmware blob ─────────────────────────────────────────
+# ── Build firmware blobs ────────────────────────────────────────
 
 $(FIRMWARE_DST): $(FIRMWARE_SRC)
 	cat $^ > $@
 
+$(FW_PID0XD0_DST): $(FW_PID0XD0_SRC)
+	cat $^ > $@
+
 # ── Install ─────────────────────────────────────────────────────
 
-install: modules $(FIRMWARE_DST)
+install: modules $(FIRMWARE_DST) $(FW_PID0XD0_DST)
 	$(MAKE) -C $(KERNEL_SRC) M=$(CURDIR) modules_install
 	@echo "  INSTALL $(FIRMWARE_DIR)/$(FIRMWARE_DST)"
 	install -m 0644 $(FIRMWARE_DST) $(FIRMWARE_DIR)/
+	@echo "  INSTALL $(FIRMWARE_DIR)/$(FW_PID0XD0_DST)"
+	install -m 0644 $(FW_PID0XD0_DST) $(FIRMWARE_DIR)/
 	@echo "  INSTALL $(BLACKLIST_CONF)"
 	@mkdir -p $(MODPROBE_DIR)
 	@echo '# Blacklist lmedm04 — conflicts with lme2510dtmb (same VID/PID)' \
@@ -68,6 +75,7 @@ install: modules $(FIRMWARE_DST)
 	@echo "================================"
 	@echo "  Install complete."
 	@echo "  Firmware:  $(FIRMWARE_DIR)/$(FIRMWARE_DST)"
+	@echo "             $(FIRMWARE_DIR)/$(FW_PID0XD0_DST)"
 	@echo "  Blacklist: $(BLACKLIST_CONF)"
 	@echo ""
 	@echo "  To load the driver:"
@@ -75,7 +83,7 @@ install: modules $(FIRMWARE_DST)
 	@echo "================================"
 
 uninstall:
-	rm -f $(FIRMWARE_DIR)/$(FIRMWARE_DST)
+	rm -f $(FIRMWARE_DIR)/$(FIRMWARE_DST) $(FIRMWARE_DIR)/$(FW_PID0XD0_DST)
 	rm -f $(BLACKLIST_CONF)
 	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(CURDIR) clean
 

@@ -70,7 +70,10 @@
 #define FW_ROM_SIZE             512
 #define FW_APP_SIZE             4836
 #define FW_TOTAL_SIZE           (FW_ROM_SIZE + FW_APP_SIZE)  /* 5348 */
+#define FW_APP_SIZE_PID0XD0     3143
+#define FW_TOTAL_SIZE_PID0XD0   (FW_ROM_SIZE + FW_APP_SIZE_PID0XD0)  /* 3655 */
 #define LME2510DTMB_FW_FILE            "dvb-usb-lme2510dtmb.fw"
+#define LME2510DTMB_FW_PID0XD0_FILE    "dvb-usb-lme2510dtmb-pid0xd0.fw"
 
 /* ── Status packet ────────────────────────────────────────────── */
 
