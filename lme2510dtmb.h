@@ -20,7 +20,12 @@
 /* ── USB ──────────────────────────────────────────────────────── */
 
 #define LME2510DTMB_VID                0x3344
+#define LME2510DTMB_VID_ALT            0x1b80  /* alternate vendor stick */
 #define LME2510DTMB_PID_RUNTIME        0x1120
+#define LME2510DTMB_PID_RUNTIME_1122   0x1122  /* warm, lmedm04 conflict (blacklist) */
+#define LME2510DTMB_PID_RUNTIME_22D0   0x22d0  /* warm, C++ "pid0xd0" family */
+#define LME2510DTMB_PID_RUNTIME_22D8   0x22d8  /* warm */
+#define LME2510DTMB_PID_RUNTIME_E388   0xe388  /* warm, both VIDs */
 #define LME2510DTMB_PID_COLD           0x1111  /* pre-firmware identity */
 
 /* ── Endpoints (alt-setting 1) ────────────────────────────────── */

@@ -468,8 +468,17 @@ static int lme2510dtmb_lgs8gl5_get_frontend(struct dvb_frontend *fe,
 {
 	struct dvb_usb_device *d = fe_to_d(fe);
 	struct lme2510dtmb_state *st = d->priv;
+	struct lme2510dtmb_lgs8gl5_state *state = fe->demodulator_priv;
 
 	p->bandwidth_hz = 8000000;
+
+	/* Defaults (fallback for unknown mode / not-yet-locked). */
+	p->code_rate_HP = FEC_1_2;
+	p->code_rate_LP = FEC_7_8;
+	p->guard_interval = GUARD_INTERVAL_1_32;
+	p->transmission_mode = TRANSMISSION_MODE_2K;
+	p->modulation = QAM_64;
+	p->hierarchy = HIERARCHY_NONE;
 
 	if (st->stream_active) {
 		dev_dbg(&d->udev->dev, "lme2510dtmb: get_frontend: cached\n");
@@ -477,7 +486,6 @@ static int lme2510dtmb_lgs8gl5_get_frontend(struct dvb_frontend *fe,
 	}
 
 	{
-		struct lme2510dtmb_lgs8gl5_state *state = fe->demodulator_priv;
 		int inv = lme2510dtmb_lgs8gl5_read_reg(state, REG_INVERSION);
 
 		if (inv >= 0)
@@ -485,12 +493,78 @@ static int lme2510dtmb_lgs8gl5_get_frontend(struct dvb_frontend *fe,
 				       INVERSION_ON : INVERSION_OFF;
 	}
 
-	p->code_rate_HP = FEC_1_2;
-	p->code_rate_LP = FEC_7_8;
-	p->guard_interval = GUARD_INTERVAL_1_32;
-	p->transmission_mode = TRANSMISSION_MODE_2K;
-	p->modulation = QAM_64;
-	p->hierarchy = HIERARCHY_NONE;
+	/*
+	 * GB20600-2006 DTMB mode number: reg0xA2 high nibble after lock
+	 * (C++ reverse engineering, dtv_viewer).  Values 1..7 map to the
+	 * standard work modes (ITU/GB tables agree):
+	 *   1: C=3780 16QAM PN945 0.4   2: C=1    4QAM  PN595 0.8
+	 *   3: C=3780 16QAM PN945 0.6   4: C=1    16QAM PN595 0.8
+	 *   5: C=3780 16QAM PN420 0.8   6: C=3780 64QAM PN420 0.6
+	 *   7: C=1    32QAM PN595 0.8
+	 * 4QAM == QPSK; DVB API uses TRANSMISSION_MODE_C1/C3780 and
+	 * GUARD_INTERVAL_PN420/595/945 (SYS_DTMB enums, defined in the
+	 * same uapi header).
+	 */
+	{
+		int a2 = lme2510dtmb_lgs8gl5_read_reg(state, REG_A2);
+
+		if (a2 >= 0) {
+			u8 mode = a2 >> 4;
+
+			switch (mode) {
+			case 1:
+				p->modulation = QAM_16;
+				p->transmission_mode = TRANSMISSION_MODE_C3780;
+				p->guard_interval = GUARD_INTERVAL_PN945;
+				p->code_rate_HP = FEC_2_5;
+				break;
+			case 2:
+				p->modulation = QPSK;
+				p->transmission_mode = TRANSMISSION_MODE_C1;
+				p->guard_interval = GUARD_INTERVAL_PN595;
+				p->code_rate_HP = FEC_4_5;
+				break;
+			case 3:
+				p->modulation = QAM_16;
+				p->transmission_mode = TRANSMISSION_MODE_C3780;
+				p->guard_interval = GUARD_INTERVAL_PN945;
+				p->code_rate_HP = FEC_2_3;
+				break;
+			case 4:
+				p->modulation = QAM_16;
+				p->transmission_mode = TRANSMISSION_MODE_C1;
+				p->guard_interval = GUARD_INTERVAL_PN595;
+				p->code_rate_HP = FEC_4_5;
+				break;
+			case 5:
+				p->modulation = QAM_16;
+				p->transmission_mode = TRANSMISSION_MODE_C3780;
+				p->guard_interval = GUARD_INTERVAL_PN420;
+				p->code_rate_HP = FEC_4_5;
+				break;
+			case 6:
+				p->modulation = QAM_64;
+				p->transmission_mode = TRANSMISSION_MODE_C3780;
+				p->guard_interval = GUARD_INTERVAL_PN420;
+				p->code_rate_HP = FEC_2_3;
+				break;
+			case 7:
+				p->modulation = QAM_32;
+				p->transmission_mode = TRANSMISSION_MODE_C1;
+				p->guard_interval = GUARD_INTERVAL_PN595;
+				p->code_rate_HP = FEC_4_5;
+				break;
+			default:
+				dprintk("%s: unknown DTMB mode 0x%02x (a2=0x%02x)\n",
+					__func__, mode, a2);
+				break;
+			}
+
+			if (mode >= 1 && mode <= 7)
+				dprintk("%s: DTMB mode %d locked\n",
+					__func__, mode);
+		}
+	}
 
 	return 0;
 }

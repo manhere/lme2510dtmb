@@ -421,6 +421,31 @@ static const struct usb_device_id lme2510dtmb_id_table[] = {
 			       &lme2510dtmb_props,
 			       "LME2510 DTMB", RC_MAP_EMPTY)
 	},
+	{
+		DVB_USB_DEVICE(LME2510DTMB_VID, LME2510DTMB_PID_RUNTIME_1122,
+			       &lme2510dtmb_props,
+			       "LME2510 DTMB (0x1122)", RC_MAP_EMPTY)
+	},
+	{
+		DVB_USB_DEVICE(LME2510DTMB_VID, LME2510DTMB_PID_RUNTIME_22D0,
+			       &lme2510dtmb_props,
+			       "LME2510 DTMB (0x22d0)", RC_MAP_EMPTY)
+	},
+	{
+		DVB_USB_DEVICE(LME2510DTMB_VID, LME2510DTMB_PID_RUNTIME_22D8,
+			       &lme2510dtmb_props,
+			       "LME2510 DTMB (0x22d8)", RC_MAP_EMPTY)
+	},
+	{
+		DVB_USB_DEVICE(LME2510DTMB_VID, LME2510DTMB_PID_RUNTIME_E388,
+			       &lme2510dtmb_props,
+			       "LME2510 DTMB (0xe388)", RC_MAP_EMPTY)
+	},
+	{
+		DVB_USB_DEVICE(LME2510DTMB_VID_ALT, LME2510DTMB_PID_RUNTIME_E388,
+			       &lme2510dtmb_props,
+			       "LME2510 DTMB (0x1b80:0xe388)", RC_MAP_EMPTY)
+	},
 	{ }  /* terminating entry */
 };
 

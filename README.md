@@ -1,6 +1,17 @@
 # lme2510dtmb — LME2510/LME2511 DTMB USB 棒合并版 out-of-tree 内核驱动
 
-三项目优点合并版（out-of-tree，dvb-usb-v2 框架）。目标硬件：**LME2511 + LGS8GL5 + MAX2165**（VID 0x3344，热态 PID 0x1120 / 冷态 0x1111）。
+三项目优点合并版（out-of-tree，dvb-usb-v2 框架）。目标硬件：**LME2511 + LGS8GL5 + MAX2165**。
+
+支持的 USB ID（冷态 0x3344:0x1111，灌固件后按热态 PID 重枚举）：
+
+| VID:PID | 说明 |
+|---|---|
+| 0x3344:0x1120 | 主热态 PID |
+| 0x3344:0x1122 | 热态变体（与 lmedm04 冲突，已自动 blacklist） |
+| 0x3344:0x22d0 | 热态变体（C++ 版 pid0xd0 固件家族，见下方取舍） |
+| 0x3344:0x22d8 | 热态变体 |
+| 0x3344:0xe388 | 热态变体 |
+| 0x1b80:0xe388 | 换 VID 贴牌变体 |
 
 ## 来源与合并点
 
@@ -47,7 +58,8 @@ deb / `make install` 会把默认值写入 `/etc/modprobe.d/lme2510dtmb.conf`，
 
 - **TS 重同步未移植**：内核 `dvb_dmx_swfilter` 自带 0x47 同步容错，收益低；
 - **G75 路径未实现**：实机确认为 LGS8GL5（chip_id==0x0E），demod attach 会校验并在非 GL5 时拒绝；
-- **HiSilicon 的 22D0 固件变体未实现**：该 blob 不可得，且本机不需要；
+- **22D0 (pid0xd0) 固件变体未内置**：冷启动固定上传主固件（与 C++ 版默认行为一致——冷态 PID 恒为 0x1111，主固件即其选择）；若 0x22d0 变体实机无法锁定，需引入 `pid0xd0.bin`（3143B）按 PID 选择；
+- **get_frontend DTMB 模式号上报**：锁定后读 reg0xA2 高 4 位（GB20600 模式 1–7），按标准工作模式表映射为 modulation / C1·C3780 / PN420·595·945 / 码率，替代原静态假值；
 - **流中加 PID（hw filter 开启时）会即时经 EP1 提交**：lmedm04 主线驱动同硬件家族如此工作，但本固件未验证——默认全通路径完全无此风险；
 - **流停止不发 {0x0a}**：沿用 dybd 行为（URB 停止后 MCU 输出被丢弃）。
 
