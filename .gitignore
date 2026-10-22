@@ -1,0 +1,16 @@
+*.o
+*.o.cmd
+*.ko
+*.ko.cmd
+*.mod
+*.mod.c
+*.mod.o
+*.mod.o.cmd
+*.symvers
+*.order
+*.dwo
+.tmp_versions/
+Module.markers
+Module.symvers
+modules.order
+dvb-usb-lme2510dtmb.fw

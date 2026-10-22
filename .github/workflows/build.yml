@@ -1,0 +1,62 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  aarch64:
+    runs-on: ubuntu-24.04
+    env:
+      # Prebuilt arm64 kernel headers matching the target platform
+      # (HiSilicon-Development firmware release "kernel").
+      HEADERS_DEB_URL: >-
+        https://github.com/HiSilicon-Development/firmware/releases/download/kernel/linux-headers-6.12.112-dvbip-1002_6.12.112-1_arm64.deb
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            bc bison flex libssl-dev libelf-dev
+
+      # The headers .deb ships arm64 host tools (scripts/fixdep etc.);
+      # register qemu binfmt so they run on the x86_64 runner.
+      - name: Set up QEMU binfmt (aarch64)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Extract target kernel headers
+        run: |
+          mkdir -p /tmp/hdr
+          curl -fSL --retry 3 -o /tmp/hdr/headers.deb "$HEADERS_DEB_URL"
+          dpkg-deb -x /tmp/hdr/headers.deb /tmp/hdr/rootfs
+          KDIR="$(find /tmp/hdr/rootfs/usr/src -maxdepth 1 -type d -name 'linux-headers-*' | head -n1)"
+          test -n "$KDIR" || { echo "headers dir not found"; exit 1; }
+          echo "KDIR=$KDIR" >> "$GITHUB_ENV"
+          echo "kernel headers: $KDIR"
+
+      - name: Build module (aarch64)
+        run: |
+          make KERNEL_SRC="$KDIR" ARCH=arm64 \
+               CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)"
+          file lme2510dtmb.ko
+          aarch64-linux-gnu-readelf -h lme2510dtmb.ko | grep -E 'Class|Machine'
+
+      - name: Build firmware blob
+        run: make dvb-usb-lme2510dtmb.fw
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lme2510dtmb-6.12.112-dvbip-1002-aarch64
+          path: |
+            lme2510dtmb.ko
+            dvb-usb-lme2510dtmb.fw
+          if-no-files-found: error
