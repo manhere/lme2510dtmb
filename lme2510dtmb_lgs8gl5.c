@@ -679,8 +679,8 @@ static const struct dvb_frontend_ops lme2510dtmb_lgs8gl5_ops = {
 	.delsys = { SYS_DVBT },
 	.info = {
 		.name            = "LME2510DTMB LGS-8GL5 DTMB",
-		.frequency_min_hz  = 474 * MHz,
-		.frequency_max_hz  = 858 * MHz,
+		.frequency_min_hz  = 450 * MHz,
+		.frequency_max_hz  = 880 * MHz,
 		.frequency_stepsize_hz = 10 * kHz,
 		.caps = FE_CAN_FEC_AUTO |
 			FE_CAN_QPSK | FE_CAN_QAM_16 | FE_CAN_QAM_32 |

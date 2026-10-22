@@ -41,15 +41,46 @@ MODULE_PARM_DESC(ep8a_status,
 
 /* ── Power control ─────────────────────────────────────────────── */
 
+/*
+ * Clear a possibly-stalled bulk endpoint after firmware (re)enumeration
+ * (ported from HiSilicon lme2510-dtmb.c prepare_runtime).  Some runtime
+ * firmware states reject CLEAR_FEATURE while still accepting commands,
+ * so tolerate -EPIPE.
+ */
+static int lme2510dtmb_clear_halt(struct dvb_usb_device *d, unsigned int pipe)
+{
+	int ret = usb_clear_halt(d->udev, pipe);
+
+	return ret == -EPIPE ? 0 : ret;
+}
+
 int lme2510dtmb_power_ctrl(struct dvb_usb_device *d, int onoff)
 {
-	if (onoff) {
-		int ret = usb_set_interface(d->udev,
-					 d->props->bInterfaceNumber, 1);
-		msleep(200);
+	unsigned int pipe;
+	int ret;
+
+	if (!onoff)
+		return 0;
+
+	ret = usb_set_interface(d->udev,
+				d->props->bInterfaceNumber, 1);
+	if (ret)
 		return ret;
-	}
-	return 0;
+	msleep(200);
+
+	/* Command OUT / Command IN / TS IN — clear stale halt state on
+	 * all three bulk pipes so the first transfer cannot fail with
+	 * -EPIPE left over from the firmware upload stage. */
+	pipe = usb_sndbulkpipe(d->udev, EP_BULK_OUT);
+	ret = lme2510dtmb_clear_halt(d, pipe);
+	if (ret)
+		return ret;
+	pipe = usb_rcvbulkpipe(d->udev, EP_BULK_IN);
+	ret = lme2510dtmb_clear_halt(d, pipe);
+	if (ret)
+		return ret;
+	pipe = usb_rcvbulkpipe(d->udev, EP_TS_IN);
+	return lme2510dtmb_clear_halt(d, pipe);
 }
 
 /* ── Frontend attach ───────────────────────────────────────────── */
