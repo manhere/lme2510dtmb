@@ -3,13 +3,18 @@ name: build
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   aarch64:
     runs-on: ubuntu-24.04
     env:
+      PKG_VER: 0.2.0-1
       # Prebuilt arm64 kernel headers matching the target platform
       # (HiSilicon-Development firmware release "kernel").
       HEADERS_DEB_URL: >-
@@ -39,8 +44,10 @@ jobs:
           dpkg-deb -x /tmp/hdr/headers.deb /tmp/hdr/rootfs
           KDIR="$(find /tmp/hdr/rootfs/usr/src -maxdepth 1 -type d -name 'linux-headers-*' | head -n1)"
           test -n "$KDIR" || { echo "headers dir not found"; exit 1; }
+          KREL="$(basename "$KDIR" | sed 's/^linux-headers-//')"
           echo "KDIR=$KDIR" >> "$GITHUB_ENV"
-          echo "kernel headers: $KDIR"
+          echo "KREL=$KREL" >> "$GITHUB_ENV"
+          echo "kernel headers: $KDIR (release $KREL)"
 
       - name: Build module (aarch64)
         run: |
@@ -52,11 +59,93 @@ jobs:
       - name: Build firmware blob
         run: make dvb-usb-lme2510dtmb.fw
 
-      - name: Upload artifacts
+      - name: Package .deb
+        run: |
+          set -e
+          mkdir -p pkg/DEBIAN
+          mkdir -p "pkg/lib/modules/$KREL/kernel/drivers/media/usb"
+          mkdir -p pkg/lib/firmware
+          mkdir -p pkg/etc/modprobe.d
+
+          install -m 0644 lme2510dtmb.ko \
+            "pkg/lib/modules/$KREL/kernel/drivers/media/usb/lme2510dtmb.ko"
+          install -m 0644 dvb-usb-lme2510dtmb.fw pkg/lib/firmware/
+
+          cat > pkg/etc/modprobe.d/lme2510dtmb.conf <<'EOF'
+          # Blacklist lmedm04 — conflicts with lme2510dtmb (same VID/PID)
+          blacklist dvb_usb_lmedm04
+          install dvb_usb_lmedm04 /bin/false
+          EOF
+
+          cat > pkg/DEBIAN/control <<EOF
+          Package: lme2510dtmb
+          Version: ${PKG_VER}
+          Section: kernel
+          Priority: optional
+          Architecture: arm64
+          Maintainer: dabing <manhere@users.noreply.github.com>
+          Description: LME2510 DTMB USB dongle DVB driver (kernel ${KREL})
+           Out-of-tree dvb-usb-v2 driver for the LME2510C/LME2511 DTMB stick
+           (LGS8GL5 demodulator + MAX2165 tuner). Installs the prebuilt
+           kernel module for kernel ${KREL}, the firmware blob and a
+           modprobe blacklist for the conflicting in-tree lmedm04 driver.
+          EOF
+
+          cat > pkg/DEBIAN/postinst <<'EOF'
+          #!/bin/sh
+          set -e
+          depmod -a "__KREL__" 2>/dev/null || depmod -a
+          echo "lme2510dtmb installed. Load with: sudo modprobe lme2510dtmb"
+          EOF
+
+          cat > pkg/DEBIAN/postrm <<'EOF'
+          #!/bin/sh
+          set -e
+          depmod -a "__KREL__" 2>/dev/null || depmod -a || true
+          EOF
+
+          sed -i "s/__KREL__/$KREL/g" pkg/DEBIAN/postinst pkg/DEBIAN/postrm
+          chmod 755 pkg/DEBIAN/postinst pkg/DEBIAN/postrm
+
+          DEB="lme2510dtmb_${PKG_VER}_${KREL}_arm64.deb"
+          dpkg-deb --build --root-owner-group pkg "$DEB"
+          dpkg-deb --info "$DEB"
+          echo "DEB=$DEB" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lme2510dtmb-6.12.112-dvbip-1002-aarch64
+          name: lme2510dtmb-${{ env.KREL }}-aarch64-deb
           path: |
+            ${{ env.DEB }}
             lme2510dtmb.ko
             dvb-usb-lme2510dtmb.fw
           if-no-files-found: error
+
+      # Versioned tag push (v*) -> release for that tag.
+      # Plain push to main  -> refresh the rolling "latest" pre-release.
+      - name: Publish to GitHub Release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+            gh release create "$TAG" "$DEB" \
+              --title "lme2510dtmb $TAG" \
+              --generate-notes
+          else
+            TAG="latest"
+            gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+            gh release create "$TAG" "$DEB" \
+              --title "lme2510dtmb latest ($KREL)" \
+              --notes "Rolling build of \`main\` for kernel **$KREL** (arm64).
+
+          Install:
+              sudo dpkg -i $DEB
+              sudo modprobe lme2510dtmb
+
+          Commit: ${{ github.sha }}" \
+              --prerelease \
+          || gh release upload "$TAG" "$DEB" --clobber
+          fi
