@@ -6,6 +6,17 @@ on:
     tags: [ 'v*' ]
   pull_request:
   workflow_dispatch:
+    inputs:
+      headers_variant:
+        description: 'HiSilicon headers variant (6.12.112-dvbip-XXXX)'
+        type: choice
+        required: false
+        default: '1002'
+        options:
+          - '1001'
+          - '1002'
+          - '1004'
+          - '1006'
 
 permissions:
   contents: write
@@ -17,8 +28,11 @@ jobs:
       PKG_VER: 0.2.0-1
       # Prebuilt arm64 kernel headers matching the target platform
       # (HiSilicon-Development firmware release "kernel").
+      # workflow_dispatch -> selectable variant (default 1002);
+      # push / PR builds always use 1002.
+      HEADERS_VARIANT: ${{ inputs.headers_variant || '1002' }}
       HEADERS_DEB_URL: >-
-        https://github.com/HiSilicon-Development/firmware/releases/download/kernel/linux-headers-6.12.112-dvbip-1002_6.12.112-1_arm64.deb
+        https://github.com/HiSilicon-Development/firmware/releases/download/kernel/linux-headers-6.12.112-dvbip-${{ inputs.headers_variant || '1002' }}_6.12.112-1_arm64.deb
 
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +53,7 @@ jobs:
 
       - name: Extract target kernel headers
         run: |
+          echo "headers variant: dvbip-$HEADERS_VARIANT"
           mkdir -p /tmp/hdr
           curl -fSL --retry 3 -o /tmp/hdr/headers.deb "$HEADERS_DEB_URL"
           dpkg-deb -x /tmp/hdr/headers.deb /tmp/hdr/rootfs
@@ -125,7 +140,10 @@ jobs:
           if-no-files-found: error
 
       # Versioned tag push (v*) -> release for that tag.
-      # Plain push to main  -> refresh the rolling "latest" pre-release.
+      # Plain push to main  -> upsert the rolling "latest" pre-release.
+      # The deb filename carries the kernel release (dvbip-XXXX), so
+      # builds of different header variants coexist as separate assets
+      # — upload with --clobber instead of delete+recreate.
       - name: Publish to GitHub Release
         if: github.event_name != 'pull_request'
         env:
@@ -138,16 +156,20 @@ jobs:
               --generate-notes
           else
             TAG="latest"
-            gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-            gh release create "$TAG" "$DEB" \
-              --title "lme2510dtmb latest ($KREL)" \
-              --notes "Rolling build of \`main\` for kernel **$KREL** (arm64).
+            if ! gh release view "$TAG" >/dev/null 2>&1; then
+              gh release create "$TAG" \
+                --title "lme2510dtmb latest" \
+                --notes "Rolling builds of \`main\` (arm64).
 
           Install:
-              sudo dpkg -i $DEB
+              sudo dpkg -i lme2510dtmb_*.deb
               sudo modprobe lme2510dtmb
 
+          Assets are named per kernel release (6.12.112-dvbip-1001/1002/1004/1006);
+          dispatch a build with the matching variant to refresh an asset.
+
           Commit: ${{ github.sha }}" \
-              --prerelease \
-          || gh release upload "$TAG" "$DEB" --clobber
+                --prerelease
+            fi
+            gh release upload "$TAG" "$DEB" --clobber
           fi
